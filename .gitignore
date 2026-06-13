@@ -1,0 +1,4 @@
+config/discord.local.json
+.state/
+data/latest-completions.json
+
