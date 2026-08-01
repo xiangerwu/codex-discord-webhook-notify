@@ -84,6 +84,7 @@ function usage() {
     "  --agent <name>         Specify the agent (e.g. codex, claude, antigravity). Default: codex",
     "  --dry-run              Validate and print actions without calling Discord.",
     "  --preview <path>       Save the generated notification card PNG.",
+    "  --skip-forward         Do not run forwardNotifyCommand after Discord delivery.",
     "  --event-log-dir <path> Raw Codex event log directory. Default: .state/events",
     "  --title-cache <path>   Thread title cache path. Default: .state/thread-titles.json",
     "  --help                 Show this help.",
@@ -103,6 +104,7 @@ function parseArgs(argv) {
     eventFile: "",
     agent: "codex",
     previewPath: "",
+    skipForward: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -116,6 +118,8 @@ function parseArgs(argv) {
     } else if (arg === "--preview") {
       args.previewPath = resolveRequiredValue(argv, index, arg);
       index += 1;
+    } else if (arg === "--skip-forward") {
+      args.skipForward = true;
     } else if (arg === "--codex-notify") {
       args.codexNotify = true;
     } else if (arg === "--claude-notify") {
@@ -996,7 +1000,7 @@ async function main() {
     }
   }
 
-  if (args.codexNotify && !args.dryRun) {
+  if (args.codexNotify && !args.dryRun && !args.skipForward) {
     await forwardNotifyEvent(config.forwardNotifyCommand, codexEventRaw);
   }
 
