@@ -55,6 +55,25 @@ test("card data includes the responding agent and excludes the conversation titl
   assert.equal("title" in data, false);
 });
 
+test("long status labels stay concise and completed checks explain missing results", () => {
+  const limited = buildNotificationCardData({
+    statusKey: "usage_limited",
+    projectName: "Auto Notify",
+    completedAt: "2026-08-01T11:59:00Z",
+    summary: "配額已達限制。",
+  });
+  const check = buildNotificationCardData({
+    statusKey: "completed_check",
+    projectName: "Auto Notify",
+    completedAt: "2026-08-01T11:59:00Z",
+    summary: "",
+  });
+
+  assert.equal(limited.status, "用量不足");
+  assert.equal(check.status, "待確認");
+  assert.equal(check.result, "代理已停止回應，但未提供結果摘要。請開啟任務確認。");
+});
+
 test("Discord request uses one PNG attachment", async () => {
   const payload = { content: "<@123456789>" };
   const body = buildDiscordRequestBody(payload, Buffer.from("png"));

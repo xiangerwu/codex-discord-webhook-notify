@@ -803,6 +803,7 @@ function avatarPathFor(statusKey) {
 
 function buildNotificationCardData(record) {
   const agent = String(record.agent || "codex").toLowerCase();
+  const summary = String(record.summary || "").trim();
   return {
     status: statusLabelFor(record.statusKey),
     statusKey: record.statusKey,
@@ -814,7 +815,10 @@ function buildNotificationCardData(record) {
         antigravity: "Antigravity",
       }[agent] || agent,
     completedAt: formatCardTime(record.completedAt),
-    result: extractNotificationResult(record.summary),
+    result:
+      summary || record.statusKey !== "completed_check"
+        ? extractNotificationResult(summary)
+        : "代理已停止回應，但未提供結果摘要。請開啟任務確認。",
     avatarPath: avatarPathFor(record.statusKey),
   };
 }
@@ -903,8 +907,8 @@ function statusLabelFor(statusKey) {
       needs_approval: "待核准",
       failed: "失敗",
       usage_limited: "用量不足",
-      completed_check: "完成 / 需人工確認",
-    }[statusKey] || "完成 / 需人工確認"
+      completed_check: "待確認",
+    }[statusKey] || "待確認"
   );
 }
 

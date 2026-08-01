@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 
-import { buildDiscordPayload, renderNotificationCard } from "../scripts/discord-notify.mjs";
+import {
+  buildDiscordPayload,
+  buildNotificationCardData,
+  renderNotificationCard,
+} from "../scripts/discord-notify.mjs";
 
 for (const statusKey of ["completed", "needs_approval", "failed", "usage_limited", "completed_check"]) {
   const payload = buildDiscordPayload(
@@ -23,4 +27,12 @@ assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
 assert.equal(png.readUInt32BE(16), 1600);
 assert.equal(png.readUInt32BE(20), 700);
 
-console.log("notification contract eval: 6/6 passed");
+assert.equal(
+  buildNotificationCardData({ statusKey: "usage_limited", summary: "額度已達限制" }).status,
+  "用量不足"
+);
+const completedCheck = buildNotificationCardData({ statusKey: "completed_check", summary: "" });
+assert.equal(completedCheck.status, "待確認");
+assert.match(completedCheck.result, /未提供結果摘要/u);
+
+console.log("notification contract eval: 9/9 passed");

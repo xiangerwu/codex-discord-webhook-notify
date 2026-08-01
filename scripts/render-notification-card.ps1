@@ -132,7 +132,7 @@ $graphics.DrawImage($avatar, 73, 102, 220, 220)
 $graphics.Restore($savedState)
 $graphics.DrawPath([System.Drawing.Pen]::new($warning, 4), $avatarFrame)
 
-Draw-Text $graphics ([string]$data.status) "Microsoft JhengHei UI" 42 ([System.Drawing.FontStyle]::Bold) $accent 72 348 220 70
+Draw-Text $graphics ([string]$data.status) "Microsoft JhengHei UI" 34 ([System.Drawing.FontStyle]::Bold) $accent 72 354 230 62
 Draw-Text $graphics "PROJECT" "Consolas" 13 ([System.Drawing.FontStyle]::Bold) $warning 72 430 220 30
 Draw-Text $graphics ([string]$data.project) "Microsoft JhengHei UI" 22 ([System.Drawing.FontStyle]::Regular) $primary 72 458 230 52
 Draw-Text $graphics "AGENT" "Consolas" 13 ([System.Drawing.FontStyle]::Bold) $warning 72 516 220 30
