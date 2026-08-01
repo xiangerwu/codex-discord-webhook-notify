@@ -6,7 +6,7 @@ Date: 2026-08-01
 
 Use the validated **Industrial Plate (A v3)** layout for generated Discord notification cards.
 
-The card is rendered locally as a 1600×700 PNG using Windows System.Drawing. Runtime image generation does not call an AI model and adds no npm dependency.
+The card is rendered locally as a 1000×1400 PNG using Windows System.Drawing. Its height is twice the previous card, and the portrait layout prioritizes phone readability. Runtime image generation does not call an AI model and adds no npm dependency.
 
 ## Information contract
 
@@ -16,9 +16,12 @@ The card displays only:
 2. Project name
 3. Responding agent
 4. Completion time in Asia/Taipei
-5. The first two useful lines of the agent's final response, limited to 180 characters
+5. The current user request, limited to 108 characters
+6. A condensed result, limited to 108 characters. The notifier prefers a summary block the agent marks with `摘要:` / `SUMMARY:` / `結論:` (inline or as the following lines) and falls back to the first two useful lines of the final response when no marker is present.
 
-Conversation titles are intentionally excluded because they are generated automatically and are not user-controlled.
+Generated conversation titles are excluded. The user's actual request identifies the turn instead.
+
+The summary is produced by the agent, not by the notifier: the runtime still performs deterministic extraction only and never calls an AI model. Agents are instructed (via `AGENTS.md` / `CLAUDE.md`) to end a turn with a `摘要:` block.
 
 ## Visual contract
 
@@ -26,8 +29,13 @@ Conversation titles are intentionally excluded because they are generated automa
 - Black mechanical identification-plate layout
 - Orange frame and top/bottom warning stripes
 - Status-specific accent color
-- Chamfered square portrait frame
-- Large completion report area
+- Full-card solid warning-red hexagons separated by thick black lines, with alternating triangle and `EMERGENCY` motifs
+- High-opacity black glass panels with a vertical transparency gradient
+- Separate status, agent, and project identity blocks
+- User request and completion report use a 4:6 height ratio
+- Compact header with portrait and metadata
+- User request above the completion report
+- Vertically stacked, large-text content panels
 
 ## Verification
 

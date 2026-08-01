@@ -20,12 +20,17 @@ for (const statusKey of ["completed", "needs_approval", "failed", "usage_limited
 const png = await renderNotificationCard({
   statusKey: "completed",
   projectName: "Auto Notify",
+  request: "把通知卡改成手機容易閱讀",
   completedAt: "2026-08-01T11:59:00Z",
   summary: "已完成通知卡。\n測試 3/3 通過。",
 });
 assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
-assert.equal(png.readUInt32BE(16), 1600);
-assert.equal(png.readUInt32BE(20), 700);
+assert.equal(png.readUInt32BE(16), 1000);
+assert.equal(png.readUInt32BE(20), 1400);
+assert.equal(
+  buildNotificationCardData({ request: "顯示這次使用者要求" }).request,
+  "顯示這次使用者要求"
+);
 
 assert.equal(
   buildNotificationCardData({ statusKey: "usage_limited", summary: "額度已達限制" }).status,
@@ -35,4 +40,4 @@ const completedCheck = buildNotificationCardData({ statusKey: "completed_check",
 assert.equal(completedCheck.status, "待確認");
 assert.match(completedCheck.result, /未提供結果摘要/u);
 
-console.log("notification contract eval: 9/9 passed");
+console.log("notification contract eval: 10/10 passed");

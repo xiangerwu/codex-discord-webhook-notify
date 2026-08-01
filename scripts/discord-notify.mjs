@@ -398,6 +398,7 @@ function normalizeEvent(event, config, titleCache) {
     new Date().toISOString();
   const url = String(readFirst(event, ["url", "threadUrl", "thread_url"]) || "").trim();
   const projectPath = cwd || "Unknown project";
+  const request = extractUserPrompts(event)[0] || title;
 
   return {
     id: threadId || turnId || `${eventType || "codex-event"}-${Date.now()}`,
@@ -408,6 +409,7 @@ function normalizeEvent(event, config, titleCache) {
     title,
     projectPath,
     projectName: resolveProjectName(projectPath, config.projectAliases),
+    request,
     summary,
     url,
     threadId,
@@ -437,10 +439,12 @@ async function normalizeClaudeEvent(event, config) {
   const notificationMessage = String(readFirst(event, ["message"]) || "").trim();
 
   let title = "";
+  let request = "";
   let summary = "";
   if (transcriptPath) {
     const parsed = await readClaudeTranscript(transcriptPath);
     title = parsed.title;
+    request = parsed.request;
     summary = parsed.summary;
   }
 
@@ -467,6 +471,7 @@ async function normalizeClaudeEvent(event, config) {
     title,
     projectPath,
     projectName: resolveProjectName(projectPath, config.projectAliases),
+    request: request || title,
     summary,
     url: "",
     threadId: sessionId,
@@ -479,10 +484,11 @@ async function readClaudeTranscript(transcriptPath) {
   try {
     raw = await readFile(transcriptPath, "utf8");
   } catch {
-    return { title: "", summary: "" };
+    return { title: "", request: "", summary: "" };
   }
 
   let firstUserText = "";
+  let lastUserText = "";
   let lastAssistantText = "";
 
   for (const line of raw.split(/\r?\n/u)) {
@@ -503,8 +509,9 @@ async function readClaudeTranscript(transcriptPath) {
       continue;
     }
 
-    if (role === "user" && !firstUserText && !entry?.isMeta && !text.startsWith("<")) {
-      firstUserText = text;
+    if (role === "user" && !entry?.isMeta && !text.startsWith("<")) {
+      firstUserText ||= text;
+      lastUserText = text;
     } else if (role === "assistant") {
       lastAssistantText = text;
     }
@@ -512,6 +519,7 @@ async function readClaudeTranscript(transcriptPath) {
 
   return {
     title: normalizePrompt(firstUserText),
+    request: normalizePrompt(lastUserText),
     summary: lastAssistantText.trim(),
   };
 }
@@ -765,16 +773,41 @@ function buildDiscordPayload(record, config) {
   };
 }
 
+const summaryMarker = /^(?:notify|summary|摘要|通知摘要|結論)\s*[:：]\s*(.*)$/iu;
+
 function extractNotificationResult(value) {
-  const lines = String(value || "")
+  const cleaned = String(value || "")
     .replace(/\[([^\]]+)\]\([^)]+\)/gu, "$1")
     .split(/\r?\n/u)
-    .map((line) => line.trim().replace(/^(?:#{1,6}|[-*])\s*/u, "").replaceAll("**", ""))
+    .map((line) => line.trim().replace(/^(?:#{1,6}|[-*])\s*/u, "").replaceAll("**", ""));
+
+  // Prefer the agent's own condensed summary block; fall back to the first useful lines.
+  const lines = (extractMarkedSummary(cleaned) ?? cleaned)
     .filter((line) => line && !/^DONE(?:_WITH_CONCERNS)?$/iu.test(line))
     .slice(0, 2);
 
   const result = lines.join("\n") || "沒有提供結果";
-  return result.length <= 180 ? result : `${result.slice(0, 179).trimEnd()}…`;
+  return result.length <= 108 ? result : `${result.slice(0, 107).trimEnd()}…`;
+}
+
+function extractMarkedSummary(lines) {
+  const index = lines.findIndex((line) => summaryMarker.test(line));
+  if (index < 0) {
+    return null;
+  }
+
+  const summary = [];
+  const inline = lines[index].replace(summaryMarker, "$1").trim();
+  if (inline) {
+    summary.push(inline);
+  }
+  for (const line of lines.slice(index + 1)) {
+    if (!line || summaryMarker.test(line)) {
+      break;
+    }
+    summary.push(line);
+  }
+  return summary;
 }
 
 function formatCardTime(value) {
@@ -807,7 +840,7 @@ function buildNotificationCardData(record) {
   return {
     status: statusLabelFor(record.statusKey),
     statusKey: record.statusKey,
-    project: truncateText(record.projectName || record.projectPath, 50),
+    project: truncateText(record.projectName || record.projectPath, 28),
     agent:
       {
         codex: "Codex",
@@ -815,6 +848,7 @@ function buildNotificationCardData(record) {
         antigravity: "Antigravity",
       }[agent] || agent,
     completedAt: formatCardTime(record.completedAt),
+    request: truncateText(record.request || record.title || "未提供使用者要求", 108),
     result:
       summary || record.statusKey !== "completed_check"
         ? extractNotificationResult(summary)

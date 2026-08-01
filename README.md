@@ -10,8 +10,8 @@
 - 支援完成、待核准、失敗、用量不足、需人工確認等狀態判斷
 - 自動忽略 Codex Desktop 內部 title generation / ambient suggestions 事件
 - 保留原始 Codex event log 到 `.state/events/*.jsonl` 方便校準
-- 使用現有米浴角色圖片，依狀態在本機產生科技日系通知卡
-- 從代理最終回覆取前兩行有效內容作為精簡結果
+- 使用現有米浴角色圖片，依狀態在本機產生紅黑警戒風格通知卡
+- 優先擷取代理自己標記的摘要段（`摘要：` / `SUMMARY:` / `結論：`），沒有標記才退回最終回覆前兩行
 - 支援固定格式與轉發 notify command
 
 ## 通知格式
@@ -19,16 +19,23 @@
 所有 agent 共用同一張固定格式通知卡：
 
 ```text
-狀態
-專案名稱 | 回應代理 | 完工時間（Asia/Taipei）
+狀態 | 專案名稱 | 回應代理 | 完工時間（Asia/Taipei）
+使用者要求
 精簡結果
 ```
 
-不顯示對話名稱。卡片會標示實際回應代理（例如 Codex 或 Claude）。代理負責把結論放在最終回覆前兩行，通知器只做確定性的擷取與排版，不會再次呼叫 AI。完整原始事件仍寫入 `.state/events/*.jsonl`。
+不顯示自動產生的對話名稱，改顯示該回合的使用者要求。卡片採 1000×1400 直式版面，高度是原本兩倍，方便手機查看。卡片會標示實際回應代理（例如 Codex 或 Claude）。**濃縮摘要由代理自己產生**：代理在最終回覆放一個標記段落（`摘要：` 或 `SUMMARY:`，可單行或起一段），通知器擷取該段前兩行；沒有標記時退回最終回覆前兩行。通知器只做確定性擷取與排版，不會再次呼叫 AI。完整原始事件仍寫入 `.state/events/*.jsonl`。
 
-實際卡片採工業識別牌（industrial plate）方向：左側米浴頭像為模組區塊，右側為 `COMPLETION REPORT` 面板，上下加警示斜紋。
+要讓卡片顯示乾淨摘要，請在代理指示（Codex `AGENTS.md` / Claude `CLAUDE.md`）要求它在回合結尾寫一段 `摘要：`，用 1-2 行寫結論。例如：
 
-![Codex 通知卡（工業識別牌樣式）](data/notification-concepts/concept-a-industrial-plate-v3.png)
+```text
+摘要：已完成通知卡摘要擷取改造。
+測試 8/8、eval 10/10 通過。
+```
+
+實際卡片採工業識別牌（industrial plate）方向：上方是米浴、狀態、代理與專案資訊，下方依 4:6 比例排列 `USER REQUEST` 與 `COMPLETION REPORT`。滿版背景使用實心警戒紅六角、粗黑分隔、`EMERGENCY` 與交錯三角符號，並固定隨機挑選約 15% 六角顯示為暗紅未點亮狀態；主要內容覆蓋高不透明度黑玻璃漸層，維持手機閱讀對比。
+
+![Codex 通知卡（紅黑警戒蜂巢樣式）](data/notification-concepts/concept-a-industrial-plate-v3.png)
 
 ## 檔案
 

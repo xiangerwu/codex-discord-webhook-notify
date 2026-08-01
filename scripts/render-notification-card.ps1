@@ -43,31 +43,82 @@ function Draw-HexGrid {
     [float]$StartY,
     [int]$Columns,
     [int]$Rows,
-    [float]$Radius
+    [float]$Radius,
+    $Fill = $null,
+    [int]$FillModulo = 0,
+    [bool]$ShowMotif = $false,
+    $DimFill = $null,
+    [double]$DimChance = 0
   )
-  $hexWidth = [Math]::Sqrt(3) * $Radius
+  $hexHeight = [Math]::Sqrt(3) * $Radius
+  $random = [System.Random]::new(2408)
+  $motifFont = if ($ShowMotif) { [System.Drawing.Font]::new("Bahnschrift Condensed", $Radius * 0.18, [System.Drawing.FontStyle]::Bold) } else { $null }
+  $motifFormat = if ($ShowMotif) { [System.Drawing.StringFormat]::new() } else { $null }
+  if ($null -ne $motifFormat) {
+    $motifFormat.Alignment = [System.Drawing.StringAlignment]::Center
+    $motifFormat.LineAlignment = [System.Drawing.StringAlignment]::Center
+  }
   for ($row = 0; $row -lt $Rows; $row += 1) {
     for ($column = 0; $column -lt $Columns; $column += 1) {
-      $centerX = $StartX + ($column * $hexWidth) + ($(if ($row % 2) { $hexWidth / 2 } else { 0 }))
-      $centerY = $StartY + ($row * $Radius * 1.5)
+      $centerX = $StartX + ($column * $Radius * 1.5)
+      $centerY = $StartY + ($row * $hexHeight) + ($(if ($column % 2) { $hexHeight / 2 } else { 0 }))
       $points = [System.Drawing.PointF[]]::new(6)
       for ($index = 0; $index -lt 6; $index += 1) {
-        $angle = ([Math]::PI / 180) * ((60 * $index) - 30)
+        $angle = ([Math]::PI / 180) * (60 * $index)
         $points[$index] = [System.Drawing.PointF]::new(
           $centerX + ($Radius * [Math]::Cos($angle)),
           $centerY + ($Radius * [Math]::Sin($angle))
         )
       }
+      if ($null -ne $Fill -and $FillModulo -gt 0 -and (($row * 3 + $column) % $FillModulo) -eq 0) {
+        $cellFill = if ($null -ne $DimFill -and $random.NextDouble() -lt $DimChance) { $DimFill } else { $Fill }
+        $Graphics.FillPolygon($cellFill, $points)
+      }
       $Graphics.DrawPolygon($Pen, $points)
+      if ($ShowMotif) {
+        $labelBounds = [System.Drawing.RectangleF]::new($centerX - ($Radius * 0.78), $centerY - ($Radius * 0.14), $Radius * 1.56, $Radius * 0.28)
+        $Graphics.DrawString("EMERGENCY", $motifFont, $Pen.Brush, $labelBounds, $motifFormat)
+        $triangleSize = $Radius * 0.15
+        $topY = $centerY - ($Radius * 0.38)
+        $bottomY = $centerY + ($Radius * 0.38)
+        $direction = if (($row + $column) % 2) { 1 } else { -1 }
+        $topTriangle = [System.Drawing.PointF[]]@(
+          [System.Drawing.PointF]::new($centerX, $topY + ($direction * $triangleSize)),
+          [System.Drawing.PointF]::new($centerX - $triangleSize, $topY - ($direction * $triangleSize * 0.7)),
+          [System.Drawing.PointF]::new($centerX + $triangleSize, $topY - ($direction * $triangleSize * 0.7))
+        )
+        $bottomTriangle = [System.Drawing.PointF[]]@(
+          [System.Drawing.PointF]::new($centerX, $bottomY - ($direction * $triangleSize)),
+          [System.Drawing.PointF]::new($centerX - $triangleSize, $bottomY + ($direction * $triangleSize * 0.7)),
+          [System.Drawing.PointF]::new($centerX + $triangleSize, $bottomY + ($direction * $triangleSize * 0.7))
+        )
+        $Graphics.FillPolygon($Pen.Brush, $topTriangle)
+        $Graphics.FillPolygon($Pen.Brush, $bottomTriangle)
+      }
     }
   }
+  if ($null -ne $motifFont) { $motifFont.Dispose() }
+  if ($null -ne $motifFormat) { $motifFormat.Dispose() }
 }
 
 function Draw-Panel {
-  param($Graphics, [float]$X, [float]$Y, [float]$Width, [float]$Height, $Stroke, $Fill)
+  param($Graphics, [float]$X, [float]$Y, [float]$Width, [float]$Height, $Stroke, $Fill, $FillEnd = $null)
   $path = New-ChamferedRectangle $X $Y $Width $Height 14
-  $Graphics.FillPath([System.Drawing.SolidBrush]::new($Fill), $path)
-  $Graphics.DrawPath([System.Drawing.Pen]::new($Stroke, 3), $path)
+  $fillBrush = if ($null -ne $FillEnd) {
+    [System.Drawing.Drawing2D.LinearGradientBrush]::new(
+      [System.Drawing.RectangleF]::new($X, $Y, $Width, $Height),
+      $Fill,
+      $FillEnd,
+      90.0
+    )
+  } else {
+    [System.Drawing.SolidBrush]::new($Fill)
+  }
+  $strokePen = [System.Drawing.Pen]::new($Stroke, 3)
+  $Graphics.FillPath($fillBrush, $path)
+  $Graphics.DrawPath($strokePen, $path)
+  $fillBrush.Dispose()
+  $strokePen.Dispose()
   $path.Dispose()
 }
 
@@ -85,17 +136,34 @@ function Draw-WarningStripes {
 }
 
 function Draw-Text {
-  param($Graphics, [string]$Text, [string]$Family, [float]$Size, [System.Drawing.FontStyle]$Style, $Color, [float]$X, [float]$Y, [float]$Width, [float]$Height)
+  param(
+    $Graphics,
+    [string]$Text,
+    [string]$Family,
+    [float]$Size,
+    [System.Drawing.FontStyle]$Style,
+    $Color,
+    [float]$X,
+    [float]$Y,
+    [float]$Width,
+    [float]$Height,
+    [System.Drawing.StringAlignment]$Alignment = [System.Drawing.StringAlignment]::Near,
+    [System.Drawing.StringAlignment]$LineAlignment = [System.Drawing.StringAlignment]::Near
+  )
   $font = [System.Drawing.Font]::new($Family, $Size, $Style)
   $brush = [System.Drawing.SolidBrush]::new($Color)
-  $Graphics.DrawString($Text, $font, $brush, [System.Drawing.RectangleF]::new($X, $Y, $Width, $Height))
+  $format = [System.Drawing.StringFormat]::new()
+  $format.Alignment = $Alignment
+  $format.LineAlignment = $LineAlignment
+  $Graphics.DrawString($Text, $font, $brush, [System.Drawing.RectangleF]::new($X, $Y, $Width, $Height), $format)
   $font.Dispose()
   $brush.Dispose()
+  $format.Dispose()
 }
 
 $data = Get-Content -Raw -Encoding UTF8 -LiteralPath $InputPath | ConvertFrom-Json
-$width = 1600
-$height = 700
+$width = 1000
+$height = 1400
 $bitmap = [System.Drawing.Bitmap]::new($width, $height)
 $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
 $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
@@ -111,40 +179,60 @@ $accentHex = switch ($data.statusKey) {
 }
 $accent = New-Color $accentHex
 $warning = New-Color "FF7400"
-$purple = New-Color "632C8B"
 $primary = New-Color "F4F7FF"
-$leftPanel = New-Color "080704"
-$rightPanel = New-Color "050504"
+$transparent = New-Color "000000" 0
+$glassTop = New-Color "080808" 245
+$glassBottom = New-Color "080000" 225
 
-Draw-WarningStripes $graphics 28 18 1544 18 $warning
-Draw-WarningStripes $graphics 28 674 1544 14 $warning
-Draw-Panel $graphics 28 48 310 620 $warning $leftPanel
-Draw-Panel $graphics 365 48 1207 620 $warning $rightPanel
+$backgroundBrush = [System.Drawing.SolidBrush]::new((New-Color "080000"))
+$graphics.FillRectangle($backgroundBrush, 0, 0, $width, $height)
+$hexBackground = [System.Drawing.Pen]::new((New-Color "050000"), 10)
+$hexFill = [System.Drawing.SolidBrush]::new((New-Color "E00000" 225))
+$hexDimFill = [System.Drawing.SolidBrush]::new((New-Color "280000" 235))
+Draw-HexGrid $graphics $hexBackground -52 -45 15 17 52 $hexFill 1 $true $hexDimFill 0.15
+$backgroundBrush.Dispose()
+$hexBackground.Dispose()
+$hexFill.Dispose()
+$hexDimFill.Dispose()
 
-Draw-Text $graphics "AI NOTIFY" "Bahnschrift" 18 ([System.Drawing.FontStyle]::Bold) $warning 72 56 240 40
+Draw-WarningStripes $graphics 28 18 944 18 $warning
+Draw-WarningStripes $graphics 28 1374 944 14 $warning
+Draw-Panel $graphics 28 48 944 1320 $warning $transparent
+
+Draw-Text $graphics "AI NOTIFY" "Bahnschrift" 20 ([System.Drawing.FontStyle]::Bold) $warning 72 66 240 40
 
 $avatar = [System.Drawing.Image]::FromFile([string]$data.avatarPath)
-$avatarFrame = New-ChamferedRectangle 73 102 220 220 18
+$avatarFrame = New-ChamferedRectangle 72 118 170 170 18
 $savedState = $graphics.Save()
 $graphics.SetClip($avatarFrame)
-$graphics.FillRectangle([System.Drawing.Brushes]::Black, 73, 102, 220, 220)
-$graphics.DrawImage($avatar, 73, 102, 220, 220)
+$graphics.FillRectangle([System.Drawing.Brushes]::Black, 72, 118, 170, 170)
+$graphics.DrawImage($avatar, 72, 118, 170, 170)
 $graphics.Restore($savedState)
 $graphics.DrawPath([System.Drawing.Pen]::new($warning, 4), $avatarFrame)
 
-Draw-Text $graphics ([string]$data.status) "Microsoft JhengHei UI" 34 ([System.Drawing.FontStyle]::Bold) $accent 72 354 230 62
-Draw-Text $graphics "PROJECT" "Consolas" 13 ([System.Drawing.FontStyle]::Bold) $warning 72 430 220 30
-Draw-Text $graphics ([string]$data.project) "Microsoft JhengHei UI" 22 ([System.Drawing.FontStyle]::Regular) $primary 72 458 230 52
-Draw-Text $graphics "AGENT" "Consolas" 13 ([System.Drawing.FontStyle]::Bold) $warning 72 516 220 30
-Draw-Text $graphics ([string]$data.agent) "Consolas" 20 ([System.Drawing.FontStyle]::Bold) $accent 72 544 220 42
-Draw-Text $graphics "COMPLETED" "Consolas" 12 ([System.Drawing.FontStyle]::Bold) $warning 72 598 220 26
-Draw-Text $graphics ([string]$data.completedAt) "Consolas" 16 ([System.Drawing.FontStyle]::Bold) $primary 72 623 235 32
+Draw-Panel $graphics 282 110 205 76 $warning $glassTop $glassBottom
+Draw-Text $graphics ([string]$data.status) "Microsoft JhengHei UI" 32 ([System.Drawing.FontStyle]::Bold) $accent 282 110 205 76 Center Center
 
-$graphics.FillRectangle([System.Drawing.SolidBrush]::new($warning), 365, 48, 350, 52)
-Draw-Text $graphics "COMPLETION REPORT" "Consolas" 17 ([System.Drawing.FontStyle]::Bold) (New-Color "030403") 392 60 320 34
-Draw-HexGrid $graphics ([System.Drawing.Pen]::new((New-Color "632C8B" 75), 1)) 1160 125 8 6 25
-Draw-Text $graphics ([string]$data.result) "Microsoft JhengHei UI" 30 ([System.Drawing.FontStyle]::Bold) $primary 420 170 1060 300
-Draw-Text $graphics "STATUS  100%  //  LOCAL RENDER" "Consolas" 14 ([System.Drawing.FontStyle]::Bold) $accent 420 590 800 34
+Draw-Panel $graphics 282 202 205 86 $warning $glassTop $glassBottom
+Draw-Text $graphics "AGENT" "Consolas" 11 ([System.Drawing.FontStyle]::Bold) $warning 282 208 205 22 Center Center
+Draw-Text $graphics ([string]$data.agent) "Consolas" 28 ([System.Drawing.FontStyle]::Bold) $primary 282 228 205 52 Center Center
+
+Draw-Panel $graphics 510 110 418 178 $warning $glassTop $glassBottom
+Draw-Text $graphics "PROJECT" "Consolas" 12 ([System.Drawing.FontStyle]::Bold) $warning 532 120 360 24
+Draw-Text $graphics ([string]$data.project) "Microsoft JhengHei UI" 25 ([System.Drawing.FontStyle]::Bold) $primary 532 146 365 48
+Draw-Text $graphics "COMPLETED" "Consolas" 12 ([System.Drawing.FontStyle]::Bold) $warning 532 210 360 24
+Draw-Text $graphics ([string]$data.completedAt) "Consolas" 16 ([System.Drawing.FontStyle]::Bold) $primary 532 234 365 36
+
+Draw-Panel $graphics 72 330 856 370 $warning $glassTop $glassBottom
+$graphics.FillRectangle([System.Drawing.SolidBrush]::new($warning), 72, 330, 300, 58)
+Draw-Text $graphics "USER REQUEST" "Consolas" 19 ([System.Drawing.FontStyle]::Bold) (New-Color "030403") 98 344 260 36
+Draw-Text $graphics ([string]$data.request) "Microsoft JhengHei UI" 30 ([System.Drawing.FontStyle]::Bold) $primary 112 420 776 230
+
+Draw-Panel $graphics 72 740 856 550 $warning $glassTop $glassBottom
+$graphics.FillRectangle([System.Drawing.SolidBrush]::new($warning), 72, 740, 350, 58)
+Draw-Text $graphics "COMPLETION REPORT" "Consolas" 19 ([System.Drawing.FontStyle]::Bold) (New-Color "030403") 98 754 310 36
+Draw-Text $graphics ([string]$data.result) "Microsoft JhengHei UI" 34 ([System.Drawing.FontStyle]::Bold) $primary 112 840 776 360
+Draw-Text $graphics "STATUS  100%  //  LOCAL RENDER" "Consolas" 16 ([System.Drawing.FontStyle]::Bold) $accent 112 1230 800 36
 
 $outputDirectory = [System.IO.Path]::GetDirectoryName($OutputPath)
 if ($outputDirectory) { [System.IO.Directory]::CreateDirectory($outputDirectory) | Out-Null }
