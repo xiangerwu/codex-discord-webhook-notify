@@ -1,24 +1,8 @@
 {
   "webhookUrl": "",
   "mentionUserId": "123456789012345678",
-  "mentionLabel": "哥哥大人",
-  "styleProfile": "rice-shower-inspired-zh",
   "forwardNotifyCommand": [],
   "projectAliases": {
     "C:\\Users\\your-name\\Documents\\your-project": "我的專案"
-  },
-  "statusImageUrls": {
-    "completed": "",
-    "needs_approval": "",
-    "failed": "",
-    "usage_limited": "",
-    "completed_check": ""
-  },
-  "styleTemplates": {
-    "completed": "那個...{projectName} 的「{conversationTitle}」已經完成了。米浴把結果輕輕放在這裡，請你看一下...",
-    "needs_approval": "那個...{projectName} 的「{conversationTitle}」需要你看一下，米浴不敢自己決定...",
-    "failed": "對不起...{projectName} 的「{conversationTitle}」好像沒有順利完成。米浴把看到的結果留下來了...",
-    "usage_limited": "那個...{projectName} 的「{conversationTitle}」力量好像不夠了，可能是用量或額度不足...",
-    "completed_check": "那個...{projectName} 的「{conversationTitle}」已經停下來了，但米浴還不太確定結果，請你確認一下..."
   }
 }

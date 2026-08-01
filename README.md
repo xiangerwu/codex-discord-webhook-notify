@@ -1,6 +1,6 @@
 # Codex Discord Webhook Notify
 
-這是一個 Codex `notify` handler。Codex 對話回合完成時，腳本會接收 `agent-turn-complete` 事件，整理成中文 Discord embed，並透過 Discord webhook 通知指定使用者。
+這是一個 Codex `notify` handler。Codex 對話回合完成時，腳本會接收 `agent-turn-complete` 事件，在本機產生固定格式的 PNG 通知卡，再透過 Discord webhook 通知指定使用者。
 
 這個專案只做 event-driven notification，不做排程輪詢，也不掃描專案狀態。
 
@@ -10,13 +10,27 @@
 - 支援完成、待核准、失敗、用量不足、需人工確認等狀態判斷
 - 自動忽略 Codex Desktop 內部 title generation / ambient suggestions 事件
 - 保留原始 Codex event log 到 `.state/events/*.jsonl` 方便校準
-- 使用 `.state/thread-titles.json` 快取 Codex Desktop 產生的對話標題
-- 支援 Discord mention、embed、狀態顏色、公開圖片 URL、轉發 notify command
+- 使用現有米浴角色圖片，依狀態在本機產生科技日系通知卡
+- 從代理最終回覆取前兩行有效內容作為精簡結果
+- 支援固定格式與轉發 notify command
+
+## 通知格式
+
+所有 agent 共用同一張固定格式通知卡：
+
+```text
+狀態
+專案名稱 | 回應代理 | 完工時間（Asia/Taipei）
+精簡結果
+```
+
+不顯示對話名稱。卡片會標示實際回應代理（例如 Codex 或 Claude）。代理負責把結論放在最終回覆前兩行，通知器只做確定性的擷取與排版，不會再次呼叫 AI。完整原始事件仍寫入 `.state/events/*.jsonl`。
 
 ## 檔案
 
 ```text
 scripts/discord-notify.mjs     Codex notify handler
+scripts/render-notification-card.ps1  本機 PNG 卡片渲染器
 config/discord.example.json    設定範例，可複製成本機設定
 data/riceshower_stamp/*.png    米浴表情包素材
 ```
@@ -37,22 +51,12 @@ Copy-Item config\discord.example.json config\discord.local.json
 {
   "webhookUrl": "https://discord.com/api/webhooks/...",
   "mentionUserId": "123456789012345678",
-  "mentionLabel": "哥哥大人",
   "projectAliases": {
     "C:\\Users\\your-name\\Documents\\your-project": "我的專案"
-  },
-  "statusImageUrls": {
-    "completed": "",
-    "needs_approval": "",
-    "failed": "",
-    "usage_limited": "",
-    "completed_check": ""
   },
   "forwardNotifyCommand": []
 }
 ```
-
-`statusImageUrls` 只接受公開 `http(s)` URL。Discord embed 無法直接讀取本機圖片路徑；如果要使用 `data/riceshower_stamp/*.png`，請先把圖片放到可公開存取的位置，再填入 URL。
 
 ## Codex Notify
 
@@ -64,12 +68,65 @@ notify = ["node", "C:\\Users\\your-name\\Documents\\codex-discord-webhook-notify
 
 設定完成後重開 Codex App，讓 user-level `notify` 生效。
 
-## 測試
+## Claude Code Notify
 
-只產生 payload，不送 Discord：
+Claude Code（CLI 與桌面 App 共用 `~/.claude/settings.json`）在任務完成或需要確認時，會透過 hook 呼叫同一個通知卡渲染流程。
+
+在 `~/.claude/settings.json` 加入 hook（Windows 範例）：
+
+```json
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:\\Users\\your-name\\Documents\\codex-discord-webhook-notify\\scripts\\discord-notify.mjs\" --claude-notify --agent claude",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"C:\\Users\\your-name\\Documents\\codex-discord-webhook-notify\\scripts\\discord-notify.mjs\" --claude-notify --agent claude",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+- `Stop`：Claude 回合結束 → `完成`（`completed`）
+- `Notification`：Claude 需要權限或確認 → `待核准`（`needs_approval`）
+
+`--claude-notify` 會讀取 Claude Code hook 的 stdin JSON（`hook_event_name`、`cwd`、`transcript_path`），並從 transcript 取出最後一則助理回覆作為結果。只有 `Stop` / `SubagentStop` / `Notification` 事件會發送通知，其餘 hook 會被忽略。
+
+模擬 Claude 完成事件：
 
 ```powershell
-node scripts/discord-notify.mjs --test --dry-run
+node scripts/discord-notify.mjs --claude-notify '{"hook_event_name":"Stop","cwd":"C:/Users/your-name/Documents/your-project","session_id":"demo"}' --dry-run
+```
+
+## 測試
+
+產生實際 PNG 預覽，不送 Discord：
+
+```powershell
+node scripts/discord-notify.mjs --test --dry-run --preview data\notification-preview.png
+```
+
+執行 gate tests 與通知格式 eval：
+
+```powershell
+node --test scripts\discord-notify.test.mjs
+node evals\notification-contract.mjs
 ```
 
 送出一則測試通知：

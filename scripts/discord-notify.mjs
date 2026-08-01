@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { appendFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,7 @@ const rootDir = path.resolve(__dirname, "..");
 const defaultConfigPath = path.join(rootDir, "config", "discord.local.json");
 const defaultEventLogDir = path.join(rootDir, ".state", "events");
 const defaultTitleCachePath = path.join(rootDir, ".state", "thread-titles.json");
+const cardRendererPath = path.join(__dirname, "render-notification-card.ps1");
 const taipeiFormatter = new Intl.DateTimeFormat("zh-TW", {
   timeZone: "Asia/Taipei",
   year: "numeric",
@@ -36,6 +37,30 @@ const defaultStyleTemplates = {
     "那個...{projectName} 的「{conversationTitle}」已經停下來了，但米浴還不太確定結果，請你確認一下...",
 };
 
+const defaultAgentStyleTemplates = {
+  codex: {
+    completed: "那個...{projectName} 的「{conversationTitle}」已經完成了。米浴把結果輕輕放在這裡，請你看一下...",
+    needs_approval: "那個...{projectName} 的「{conversationTitle}」需要你看一下，米浴不敢自己決定...",
+    failed: "對不起...{projectName} 的「{conversationTitle}」好像沒有順利完成。米浴把看到的結果留下來了...",
+    usage_limited: "那個...{projectName} 的「{conversationTitle}」力量好像不夠了，可能是用量或額度不足...",
+    completed_check: "那個...{projectName} 的「{conversationTitle}」已經停下來了，但米浴還不太確定結果，請你確認一下...",
+  },
+  claude: {
+    completed: "Claude 已完成專案 {projectName} 中的對話「{conversationTitle}」。任務已就緒，請查收結果。",
+    needs_approval: "Claude 在專案 {projectName} 中的「{conversationTitle}」需要您的確認與授權以繼續執行。",
+    failed: "抱歉，Claude 在專案 {projectName} 中的「{conversationTitle}」執行時遇到了錯誤，無法完成任務。",
+    usage_limited: "Claude 的配額已達限制，無法在專案 {projectName} 的「{conversationTitle}」中繼續執行。",
+    completed_check: "Claude 已完成專案 {projectName} 中的階段性任務「{conversationTitle}」，請您確認目前的狀態。",
+  },
+  antigravity: {
+    completed: "Antigravity 已經突破重力！專案 {projectName} 的對話「{conversationTitle}」已順利完成。",
+    needs_approval: "Antigravity 發現需要人工操作。專案 {projectName} 的「{conversationTitle}」正等待您的核准。",
+    failed: "Antigravity 遇到重力干擾！專案 {projectName} 的「{conversationTitle}」執行失敗，請檢查日誌。",
+    usage_limited: "Antigravity 燃料不足！專案 {projectName} 的「{conversationTitle}」因配額限制已暫停。",
+    completed_check: "Antigravity 已暫停執行。專案 {projectName} 的「{conversationTitle}」已達階段目標，請確認結果。",
+  }
+};
+
 const defaultStatusImageUrls = {
   completed: "",
   needs_approval: "",
@@ -53,8 +78,12 @@ function usage() {
     "Options:",
     "  --config <path>        JSON config path. Default: config/discord.local.json",
     "  --codex-notify         Read a Codex notify event from argv or stdin.",
+    "  --claude-notify        Read a Claude Code hook event (Stop/Notification) from stdin.",
+    "  --event-file <path>    Read a Codex notify event from a JSON file.",
     "  --test                 Send one test notification.",
+    "  --agent <name>         Specify the agent (e.g. codex, claude, antigravity). Default: codex",
     "  --dry-run              Validate and print actions without calling Discord.",
+    "  --preview <path>       Save the generated notification card PNG.",
     "  --event-log-dir <path> Raw Codex event log directory. Default: .state/events",
     "  --title-cache <path>   Thread title cache path. Default: .state/thread-titles.json",
     "  --help                 Show this help.",
@@ -69,7 +98,11 @@ function parseArgs(argv) {
     test: false,
     dryRun: false,
     codexNotify: false,
+    claudeNotify: false,
     eventJson: "",
+    eventFile: "",
+    agent: "codex",
+    previewPath: "",
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -80,8 +113,19 @@ function parseArgs(argv) {
       args.test = true;
     } else if (arg === "--dry-run") {
       args.dryRun = true;
+    } else if (arg === "--preview") {
+      args.previewPath = resolveRequiredValue(argv, index, arg);
+      index += 1;
     } else if (arg === "--codex-notify") {
       args.codexNotify = true;
+    } else if (arg === "--claude-notify") {
+      args.claudeNotify = true;
+    } else if (arg === "--agent") {
+      args.agent = resolveRequiredValue(argv, index, arg).toLowerCase();
+      index += 1;
+    } else if (arg === "--event-file") {
+      args.eventFile = resolveRequiredValue(argv, index, arg);
+      index += 1;
     } else if (arg === "--config") {
       args.configPath = resolveRequiredValue(argv, index, arg);
       index += 1;
@@ -91,7 +135,7 @@ function parseArgs(argv) {
     } else if (arg === "--title-cache") {
       args.titleCachePath = resolveRequiredValue(argv, index, arg);
       index += 1;
-    } else if (args.codexNotify && !args.eventJson) {
+    } else if ((args.codexNotify || args.claudeNotify) && !args.eventJson) {
       args.eventJson = arg;
     } else {
       throw new Error(`Unknown argument: ${arg}\n\n${usage()}`);
@@ -101,6 +145,7 @@ function parseArgs(argv) {
   args.configPath = path.resolve(rootDir, args.configPath);
   args.eventLogDir = path.resolve(rootDir, args.eventLogDir);
   args.titleCachePath = path.resolve(rootDir, args.titleCachePath);
+  args.previewPath = args.previewPath ? path.resolve(rootDir, args.previewPath) : "";
   return args;
 }
 
@@ -161,6 +206,20 @@ function validateConfig(config, configPath, options = {}) {
     throw new Error("mentionUserId must be a Discord numeric user id.");
   }
 
+  const agents = {};
+  if (config.agents && typeof config.agents === "object" && !Array.isArray(config.agents)) {
+    for (const [agentName, agentValue] of Object.entries(config.agents)) {
+      if (agentValue && typeof agentValue === "object" && !Array.isArray(agentValue)) {
+        const name = agentName.toLowerCase();
+        agents[name] = {
+          mentionLabel: agentValue.hasOwnProperty("mentionLabel") ? String(agentValue.mentionLabel || "").trim() : undefined,
+          statusImageUrls: agentValue.statusImageUrls ? normalizeStatusImageUrls(agentValue.statusImageUrls) : undefined,
+          styleTemplates: agentValue.styleTemplates ? normalizeStyleTemplates(agentValue.styleTemplates) : undefined,
+        };
+      }
+    }
+  }
+
   return {
     webhookUrl,
     mentionUserId,
@@ -170,6 +229,7 @@ function validateConfig(config, configPath, options = {}) {
     styleTemplates,
     statusImageUrls,
     forwardNotifyCommand,
+    agents,
   };
 }
 
@@ -242,9 +302,22 @@ function normalizeForwardNotifyCommand(value) {
 }
 
 async function readCodexEvent(args) {
-  const raw = args.eventJson || (await readStdinIfAvailable());
+  let raw;
+  if (args.eventFile) {
+    try {
+      raw = await readFile(args.eventFile, "utf8");
+    } catch (error) {
+      if (error.code === "ENOENT") {
+        throw new Error(`Event file not found: ${args.eventFile}`);
+      }
+      throw error;
+    }
+  } else {
+    raw = args.eventJson || (await readStdinIfAvailable());
+  }
+
   if (!raw.trim()) {
-    throw new Error("Codex notify mode needs an event JSON argument or stdin payload.");
+    throw new Error("Codex notify mode needs an event JSON argument, file, or stdin payload.");
   }
 
   try {
@@ -277,12 +350,20 @@ async function logRawEvent(event, eventLogDir) {
   );
 }
 
-function normalizeCodexEvent(event, config, titleCache) {
+function normalizeEvent(event, config, titleCache) {
+  let agent = String(readFirst(event, ["agent", "client", "agentType"]) || "").trim().toLowerCase();
+  if (agent === "codex desktop") {
+    agent = "codex";
+  } else if (!agent) {
+    agent = "codex";
+  }
+
   const eventType = String(readFirst(event, ["type", "event", "eventType", "name"]) || "").trim();
   const threadId = String(readFirst(event, ["thread-id", "thread_id", "threadId"]) || "").trim();
   const turnId = String(readFirst(event, ["turn-id", "turn_id", "turnId"]) || "").trim();
   const cwd = String(readFirst(event, ["cwd", "projectPath", "workspace", "workingDirectory"]) || "").trim();
   const cachedTitle = resolveCachedTitle(event, cwd, titleCache);
+  const agentDisplayName = getAgentDisplayName(agent);
   const title = String(
     cachedTitle ||
       readFirst(event, [
@@ -296,7 +377,7 @@ function normalizeCodexEvent(event, config, titleCache) {
       ]) ||
       threadId ||
       turnId ||
-      "未命名 Codex 對話"
+      `未命名 ${agentDisplayName} 對話`
   ).trim();
   const summary = String(
     readFirst(event, [
@@ -316,6 +397,7 @@ function normalizeCodexEvent(event, config, titleCache) {
 
   return {
     id: threadId || turnId || `${eventType || "codex-event"}-${Date.now()}`,
+    agent,
     eventType,
     statusKey: detectStatusKey(event, summary, eventType),
     completedAt,
@@ -329,19 +411,138 @@ function normalizeCodexEvent(event, config, titleCache) {
   };
 }
 
-function shouldNotifyCodexEvent(event) {
+async function normalizeClaudeEvent(event, config) {
+  const hookName = String(
+    readFirst(event, ["hook_event_name", "hookEventName", "type", "event", "eventType", "name"]) || ""
+  ).trim();
+  const lowerHook = hookName.toLowerCase();
+
+  let statusKey;
+  if (lowerHook === "notification") {
+    statusKey = "needs_approval";
+  } else if (lowerHook === "stop" || lowerHook === "subagentstop") {
+    statusKey = "completed";
+  } else {
+    // Only Stop / SubagentStop / Notification hooks produce notifications.
+    return null;
+  }
+
+  const cwd = String(readFirst(event, ["cwd", "projectPath", "workspace", "workingDirectory"]) || "").trim();
+  const sessionId = String(readFirst(event, ["session_id", "sessionId"]) || "").trim();
+  const transcriptPath = String(readFirst(event, ["transcript_path", "transcriptPath"]) || "").trim();
+  const notificationMessage = String(readFirst(event, ["message"]) || "").trim();
+
+  let title = "";
+  let summary = "";
+  if (transcriptPath) {
+    const parsed = await readClaudeTranscript(transcriptPath);
+    title = parsed.title;
+    summary = parsed.summary;
+  }
+
+  if (statusKey === "needs_approval" && notificationMessage) {
+    summary = notificationMessage;
+  }
+
+  if (!title) {
+    title = sessionId ? `Claude 對話 ${sessionId.slice(0, 8)}` : "未命名 Claude 對話";
+  }
+
+  if (statusKey === "completed" && !summary) {
+    statusKey = "completed_check";
+  }
+
+  const projectPath = cwd || "Unknown project";
+
+  return {
+    id: sessionId || `claude-${lowerHook}-${Date.now()}`,
+    agent: "claude",
+    eventType: hookName,
+    statusKey,
+    completedAt: new Date().toISOString(),
+    title,
+    projectPath,
+    projectName: resolveProjectName(projectPath, config.projectAliases),
+    summary,
+    url: "",
+    threadId: sessionId,
+    turnId: "",
+  };
+}
+
+async function readClaudeTranscript(transcriptPath) {
+  let raw;
+  try {
+    raw = await readFile(transcriptPath, "utf8");
+  } catch {
+    return { title: "", summary: "" };
+  }
+
+  let firstUserText = "";
+  let lastAssistantText = "";
+
+  for (const line of raw.split(/\r?\n/u)) {
+    if (!line.trim()) {
+      continue;
+    }
+
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
+    const role = entry?.message?.role || entry?.role || entry?.type;
+    const text = extractTranscriptText(entry?.message?.content ?? entry?.content);
+    if (!text) {
+      continue;
+    }
+
+    if (role === "user" && !firstUserText && !entry?.isMeta && !text.startsWith("<")) {
+      firstUserText = text;
+    } else if (role === "assistant") {
+      lastAssistantText = text;
+    }
+  }
+
+  return {
+    title: normalizePrompt(firstUserText),
+    summary: lastAssistantText.trim(),
+  };
+}
+
+function extractTranscriptText(content) {
+  if (typeof content === "string") {
+    return content.trim();
+  }
+
+  if (Array.isArray(content)) {
+    return content
+      .filter((block) => block && block.type === "text" && typeof block.text === "string")
+      .map((block) => block.text)
+      .join("\n")
+      .trim();
+  }
+
+  return "";
+}
+
+function shouldNotifyEvent(event, agent) {
   const eventType = String(readFirst(event, ["type", "event", "eventType", "name"]) || "").toLowerCase();
 
   if (!eventType.includes("complete") && !eventType.includes("approval")) {
     return false;
   }
 
-  if (isTitleGenerationEvent(event)) {
-    return false;
-  }
+  if (agent === "codex") {
+    if (isTitleGenerationEvent(event)) {
+      return false;
+    }
 
-  if (isAmbientSuggestionEvent(event)) {
-    return false;
+    if (isAmbientSuggestionEvent(event)) {
+      return false;
+    }
   }
 
   return true;
@@ -545,58 +746,129 @@ function flattenForSearch(value) {
 
 function buildDiscordPayload(record, config) {
   const mention = `<@${config.mentionUserId}>`;
-  const mentionPrefix = config.mentionLabel ? `${mention} ${config.mentionLabel}，` : `${mention} `;
-  const statusLabel = statusLabelFor(record.statusKey);
-  const resultSummary = truncateText(record.summary || "", 100);
-  const conversation = truncateText(record.title, 80);
-  const header = renderTemplate(config.styleTemplates[record.statusKey], {
-    projectName: record.projectName || record.projectPath,
-    conversationTitle: conversation,
-    status: statusLabel,
-  });
-  const embed = {
-    title: `${statusLabel} · ${record.projectName || record.projectPath}`,
-    color: statusColorFor(record.statusKey),
-    fields: [
-      {
-        name: "專案",
-        value: record.projectName || record.projectPath,
-        inline: true,
-      },
-      {
-        name: "狀態",
-        value: statusLabel,
-        inline: true,
-      },
-      {
-        name: "時間",
-        value: formatTaipeiTime(record.completedAt),
-        inline: false,
-      },
-      {
-        name: "對話",
-        value: conversation,
-        inline: false,
-      },
-    ],
-  };
-
-  if (resultSummary) {
-    embed.description = resultSummary;
-  }
-
-  const imageUrl = config.statusImageUrls[record.statusKey];
-  if (imageUrl) {
-    embed.image = { url: imageUrl };
-  }
 
   return {
-    content: `${mentionPrefix}${header}`.slice(0, 2000),
-    embeds: [embed],
+    content: mention,
+    embeds: [
+      {
+        color: statusColorFor(record.statusKey),
+        image: { url: "attachment://notification.png" },
+      },
+    ],
     allowed_mentions: {
       users: [config.mentionUserId],
     },
   };
+}
+
+function extractNotificationResult(value) {
+  const lines = String(value || "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/gu, "$1")
+    .split(/\r?\n/u)
+    .map((line) => line.trim().replace(/^(?:#{1,6}|[-*])\s*/u, "").replaceAll("**", ""))
+    .filter((line) => line && !/^DONE(?:_WITH_CONCERNS)?$/iu.test(line))
+    .slice(0, 2);
+
+  const result = lines.join("\n") || "沒有提供結果";
+  return result.length <= 180 ? result : `${result.slice(0, 179).trimEnd()}…`;
+}
+
+function formatCardTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return String(value || "未知時間");
+  }
+
+  const parts = Object.fromEntries(
+    taipeiFormatter.formatToParts(date).map(({ type, value: partValue }) => [type, partValue])
+  );
+  return `${parts.year}.${parts.month}.${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+function avatarPathFor(statusKey) {
+  const filename =
+    {
+      completed: "开心.png",
+      needs_approval: "犹豫.png",
+      failed: "伤心.png",
+      usage_limited: "困扰.png",
+      completed_check: "唔唔.png",
+    }[statusKey] || "唔唔.png";
+  return path.join(rootDir, "data", "riceshower_stamp", filename);
+}
+
+function buildNotificationCardData(record) {
+  const agent = String(record.agent || "codex").toLowerCase();
+  return {
+    status: statusLabelFor(record.statusKey),
+    statusKey: record.statusKey,
+    project: truncateText(record.projectName || record.projectPath, 50),
+    agent:
+      {
+        codex: "Codex",
+        claude: "Claude",
+        antigravity: "Antigravity",
+      }[agent] || agent,
+    completedAt: formatCardTime(record.completedAt),
+    result: extractNotificationResult(record.summary),
+    avatarPath: avatarPathFor(record.statusKey),
+  };
+}
+
+async function renderNotificationCard(record) {
+  const stateDir = path.join(rootDir, ".state");
+  const id = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const inputPath = path.join(stateDir, `notification-card-${id}.json`);
+  const outputPath = path.join(stateDir, `notification-card-${id}.png`);
+  const powershell = path.join(
+    process.env.SystemRoot || "C:\\Windows",
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe"
+  );
+
+  await mkdir(stateDir, { recursive: true });
+  await writeFile(
+    inputPath,
+    JSON.stringify(buildNotificationCardData(record)),
+    "utf8"
+  );
+
+  try {
+    await runProcess(powershell, [
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      cardRendererPath,
+      "-InputPath",
+      inputPath,
+      "-OutputPath",
+      outputPath,
+    ]);
+    return await readFile(outputPath);
+  } finally {
+    await unlink(inputPath).catch(() => {});
+    await unlink(outputPath).catch(() => {});
+  }
+}
+
+function runProcess(executable, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(executable, args, { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+    const stderr = [];
+    child.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
+    child.on("error", reject);
+    child.on("exit", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`Notification card renderer failed (${code}): ${Buffer.concat(stderr).toString("utf8").trim()}`));
+      }
+    });
+  });
 }
 
 function truncateText(value, maxLength) {
@@ -647,11 +919,11 @@ function formatTaipeiTime(value) {
   return `${taipeiFormatter.format(date)} Asia/Taipei`;
 }
 
-async function postDiscord(webhookUrl, payload) {
+async function postDiscord(webhookUrl, payload, cardPng) {
+  const body = buildDiscordRequestBody(payload, cardPng);
   const response = await fetch(webhookUrl, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload),
+    body,
   });
 
   if (!response.ok) {
@@ -660,16 +932,34 @@ async function postDiscord(webhookUrl, payload) {
   }
 }
 
-function buildTestCompletion(config) {
+function buildDiscordRequestBody(payload, cardPng) {
+  const body = new FormData();
+  body.append("payload_json", JSON.stringify(payload));
+  body.append("files[0]", new Blob([cardPng], { type: "image/png" }), "notification.png");
+  return body;
+}
+
+function getAgentDisplayName(agent) {
+  const names = {
+    codex: "",
+    claude: "Claude",
+    antigravity: "Antigravity",
+  };
+  return names.hasOwnProperty(agent) ? names[agent] : agent;
+}
+
+function buildTestCompletion(config, agent = "codex") {
+  const agentDisplayName = getAgentDisplayName(agent);
   return {
-    id: `test-${Date.now()}`,
+    id: `test-${agent}-${Date.now()}`,
+    agent,
     eventType: "agent-turn-complete",
     statusKey: "completed",
-    title: "中文 Discord notify 測試",
+    title: `${agentDisplayName} Discord notify 測試`,
     projectPath: rootDir,
     projectName: resolveProjectName(rootDir, config.projectAliases),
     completedAt: new Date().toISOString(),
-    summary: "如果你收到這則訊息，Discord webhook、mention、中文模板都已經能正常運作。",
+    summary: `如果你收到這則訊息，${agentDisplayName || "Codex"} 的固定通知格式已正常運作。`,
     url: "",
   };
 }
@@ -694,10 +984,15 @@ async function main() {
 
   for (const record of records) {
     const payload = buildDiscordPayload(record, config);
+    const cardPng = await renderNotificationCard(record);
+    if (args.previewPath) {
+      await mkdir(path.dirname(args.previewPath), { recursive: true });
+      await writeFile(args.previewPath, cardPng);
+    }
     if (args.dryRun) {
-      console.log(JSON.stringify({ dryRun: true, payload }, null, 2));
+      console.log(JSON.stringify({ dryRun: true, payload, preview: args.previewPath || null }, null, 2));
     } else {
-      await postDiscord(config.webhookUrl, payload);
+      await postDiscord(config.webhookUrl, payload, cardPng);
     }
   }
 
@@ -710,7 +1005,18 @@ async function main() {
 
 async function resolveRecords(args, config) {
   if (args.test) {
-    return { records: [buildTestCompletion(config)], codexEventRaw: "" };
+    const agent = args.agent || "codex";
+    return { records: [buildTestCompletion(config, agent)], codexEventRaw: "" };
+  }
+
+  if (args.claudeNotify) {
+    const { event, raw } = await readCodexEvent(args);
+    await logRawEvent(event, args.eventLogDir);
+    const record = await normalizeClaudeEvent(event, config);
+    if (!record) {
+      return { records: [], codexEventRaw: raw };
+    }
+    return { records: [record], codexEventRaw: raw };
   }
 
   if (args.codexNotify) {
@@ -721,13 +1027,14 @@ async function resolveRecords(args, config) {
     if (titleRecord) {
       await writeTitleCache(args.titleCachePath, updateTitleCache(titleCache, titleRecord));
     }
-    if (!shouldNotifyCodexEvent(event)) {
+    const record = normalizeEvent(event, config, titleCache);
+    if (!shouldNotifyEvent(event, record.agent)) {
       return { records: [], codexEventRaw: raw };
     }
-    return { records: [normalizeCodexEvent(event, config, titleCache)], codexEventRaw: raw };
+    return { records: [record], codexEventRaw: raw };
   }
 
-  throw new Error(`Choose --codex-notify or --test.\n\n${usage()}`);
+  throw new Error(`Choose --codex-notify, --claude-notify, or --test.\n\n${usage()}`);
 }
 
 async function readTitleCache(cachePath) {
@@ -785,7 +1092,18 @@ async function forwardNotifyEvent(command, eventRaw) {
   });
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exitCode = 1;
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+}
+
+export {
+  buildDiscordPayload,
+  buildDiscordRequestBody,
+  buildNotificationCardData,
+  extractNotificationResult,
+  formatCardTime,
+  renderNotificationCard,
+};
