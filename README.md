@@ -26,6 +26,10 @@
 
 不顯示對話名稱。卡片會標示實際回應代理（例如 Codex 或 Claude）。代理負責把結論放在最終回覆前兩行，通知器只做確定性的擷取與排版，不會再次呼叫 AI。完整原始事件仍寫入 `.state/events/*.jsonl`。
 
+實際卡片採工業識別牌（industrial plate）方向：左側米浴頭像為模組區塊，右側為 `COMPLETION REPORT` 面板，上下加警示斜紋。
+
+![Codex 通知卡（工業識別牌樣式）](data/notification-concepts/concept-a-industrial-plate-v3.png)
+
 ## 檔案
 
 ```text
