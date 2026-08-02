@@ -33,7 +33,7 @@
 
 **Goal**: Produce the approved mobile-readable Galgame PNG from shared card data.
 
-**Independent Test**: Render a test notification with `galgame`; verify PNG signature, 1000×1400 dimensions, original avatar loading, chat bubble, framed reply, gradient, and one-line footer structures.
+**Independent Test**: Render a test notification with `galgame`; verify PNG signature, 1000×1400 dimensions, original avatar loading, chat bubble, seamless gradient reply, and one-line footer structures.
 
 ### Tests and Evals
 
@@ -47,23 +47,23 @@
 
 ## Phase 4: User Story 3 - Identify the Responding Agent and Project (Priority: P3)
 
-**Goal**: Keep 小米浴 while displaying the actual responding agent and project.
+**Goal**: Keep 小米浴 while displaying the actual responding agent and project in the approved role and top-metadata regions.
 
-**Independent Test**: Renderer contract assertions prove the speaker is composed from `agent + 小米浴` and the footer begins with the supplied project before the single-line controls.
+**Independent Test**: Renderer contract assertions prove the speaker is composed from `agent + 小米浴`, the project appears in the top metadata, and the footer contains only the single-line controls.
 
 ### Tests and Evals
 
-- [x] T007 [US3] Add failing dynamic agent and project footer assertions in `scripts/discord-notify.test.mjs`
+- [x] T007 [US3] Add failing dynamic agent, top project metadata, and project-free footer assertions in `scripts/discord-notify.test.mjs`
 
 ### Implementation
 
-- [x] T008 [US3] Bind the Galgame speaker and footer to `agent` and `project` in `scripts/notification-themes/galgame.ps1`
+- [x] T008 [US3] Bind the Galgame speaker to `agent`, place `project` in the top metadata, and keep the footer limited to controls in `scripts/notification-themes/galgame.ps1`
 
 ---
 
 ## Phase 5: Polish & Validation
 
-- [x] T009 [P] Document Galgame selection and preview commands in `README.md` while preserving `eva` in `config/discord.example.json`
+- [x] T009 [P] Summarize Galgame selection in `README.md`, document full preview commands in `docs/SETUP.md`, and preserve `eva` in `config/discord.example.json`
 - [x] T010 Run `node --test scripts\discord-notify.test.mjs` and `node evals\notification-contract.mjs`
 - [x] T011 Generate and visually inspect `.state/galgame-notification-preview.png` at full size and mobile scale using `specs/001-galgame-notification-theme/quickstart.md`
 - [x] T012 Scan changed artifacts for webhook URLs, user IDs, tokens, unrelated event data, and accidental EVA renderer changes
@@ -109,8 +109,8 @@
 - [x] T027 [US2] Reproduce the `用量不足` ellipsis with a failing status-frame regression test in `scripts/discord-notify.test.mjs`
 - [x] T028 [US2] Widen the shared Galgame status frame and text region in `scripts/notification-themes/galgame.ps1`
 - [x] T029 [US2] Run the focused regression, full tests, eval, and inspect `.state/galgame-notification-usage-preview.png`
-- [x] T030 [US3] Add a failing regression for the truncated `Antigravity 小米浴` role label in `scripts/discord-notify.test.mjs`
-- [x] T031 [US3] Widen the agent role tab, rerun validation, and refresh the usage preview in `scripts/notification-themes/galgame.ps1`
+- [x] T030 [US3] Add a failing long-name compatibility regression using the reserved `Antigravity 小米浴` label in `scripts/discord-notify.test.mjs`; do not use it as the current public preview agent
+- [x] T031 [US3] Widen the agent role tab for current and reserved long-name agents, rerun validation, and refresh the usage preview in `scripts/notification-themes/galgame.ps1`
 
 ---
 

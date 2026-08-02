@@ -71,6 +71,10 @@ config/
 └── discord.example.json
 
 README.md
+docs/
+├── SETUP.md
+└── images/
+    └── galgame-notification-example.png
 ```
 
 **Structure Decision**: Reuse the existing theme boundary. All Galgame drawing code lives in one sibling renderer; the shared handler only receives the allowlist entry. Existing gate tests and evals remain the validation entry points.

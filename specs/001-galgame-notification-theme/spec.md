@@ -4,7 +4,7 @@
 
 **Created**: 2026-08-02
 
-**Status**: Approved for implementation
+**Status**: Implemented and validated
 
 **Input**: Add a new Galgame-style Discord notification card based on the approved preview, without changing the existing EVA theme.
 
@@ -32,7 +32,7 @@ As a mobile Discord reader, I can quickly distinguish my latest request from the
 
 **Why this priority**: The approved design depends on a clear conversation hierarchy rather than a generic status dashboard.
 
-**Independent Test**: Render a card with representative Chinese and English text, inspect it at mobile width, and confirm that the request bubble, framed reply, status, time, and footer remain readable.
+**Independent Test**: Render a card with representative Chinese and English text, inspect it at mobile width, and confirm that the request bubble, seamless gradient reply, status, time, and footer remain readable.
 
 **Acceptance Scenarios**:
 
@@ -49,7 +49,7 @@ As the notification owner, I can identify which agent replied while the characte
 
 **Why this priority**: Multiple agents share the same notification pipeline, so the card must preserve agent context.
 
-**Independent Test**: Render otherwise identical records for Codex, Claude, and Antigravity and verify that the reply speaker changes while the 小米浴 identity and footer structure remain stable.
+**Independent Test**: Render otherwise identical records for the currently active agents and verify that the reply speaker changes while the 小米浴 identity and footer structure remain stable. Keep Antigravity only as a long-name compatibility fixture until its own agent takes over notification handling.
 
 **Acceptance Scenarios**:
 
@@ -103,7 +103,7 @@ As the notification owner, I can identify which agent replied while the characte
 
 - **SC-001**: All supported test notifications render successfully with both EVA and Galgame themes, with zero change to the default theme choice.
 - **SC-002**: At a 360-pixel-wide mobile preview, the status, time, request, reply, speaker, and footer controls remain distinguishable without horizontal scrolling.
-- **SC-003**: Codex, Claude, and Antigravity previews identify the correct responding agent in 100% of test cases while retaining 小米浴.
+- **SC-003**: Previews for the currently active agents identify the correct responding agent in 100% of test cases while retaining 小米浴. Antigravity remains a non-public compatibility fixture until its own agent takes over notification handling.
 - **SC-004**: The complete gate test suite and notification contract eval pass, and one inspected local Galgame PNG matches the approved layout hierarchy.
 
 ## Assumptions
