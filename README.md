@@ -12,7 +12,7 @@
 - 保留原始 Codex event log 到 `.state/events/*.jsonl` 方便校準
 - 使用現有米浴角色圖片，依狀態在本機產生紅黑警戒風格通知卡
 - 優先擷取代理自己標記的摘要段（`摘要：` / `SUMMARY:` / `結論：`），沒有標記才退回最終回覆前兩行
-- 可由設定切換通知主題，目前提供 `eva`
+- 可由設定切換通知主題，目前提供 `eva` 與 `galgame`
 - 支援固定格式與轉發 notify command
 
 ## 通知格式
@@ -25,14 +25,18 @@
 精簡結果
 ```
 
-不顯示自動產生的對話名稱，改顯示該回合的使用者要求。卡片採 1000×1400 直式版面，高度是原本兩倍，方便手機查看。卡片會標示實際回應代理（例如 Codex 或 Claude）。**濃縮摘要由代理自己產生**：代理在最終回覆放一個標記段落（`摘要：` 或 `SUMMARY:`，可單行或起一段），通知器擷取該段前兩行；沒有標記時退回最終回覆前兩行。通知器只做確定性擷取與排版，不會再次呼叫 AI。完整原始事件仍寫入 `.state/events/*.jsonl`。
+不顯示自動產生的對話名稱，改顯示該回合最新一則有效的使用者要求；Codex event 含有完整 `input-messages` 歷史時，通知器會取最後一則。卡片採 1000×1400 直式版面，高度是原本兩倍，方便手機查看。卡片會標示實際回應代理（例如 Codex 或 Claude）。**濃縮摘要由代理自己產生**：代理在最終回覆放一個標記段落（`摘要：` 或 `SUMMARY:`，可單行或起一段），通知器擷取該段前兩行；沒有標記時退回最終回覆前兩行。通知器只做確定性擷取與排版，不會再次呼叫 AI。完整原始事件仍寫入 `.state/events/*.jsonl`。
 
-要讓卡片顯示乾淨摘要，請在代理指示（Codex `AGENTS.md` / Claude `CLAUDE.md`）要求它在回合結尾寫一段 `摘要：`，用 1-2 行寫結論。例如：
+### 助手風格（米浴語氣）
+
+摘要的語氣由代理自己決定，通知器不改寫也不呼叫 AI。要讓卡片顯示米浴風格，在代理指示（Codex `AGENTS.md` / Claude `CLAUDE.md`）要求它在回合結尾寫一段 `摘要：`：語氣輕、帶米浴怯生生的口吻（「那個...」「米浴...」「請你看一下...」），但結論仍要具體。摘要有 108 字上限，賣萌綴詞請節制，別擠掉實際結果。例：
 
 ```text
-摘要：已完成通知卡摘要擷取改造。
-測試 8/8、eval 10/10 通過。
+摘要：那個...改好通知卡摘要擷取了，米浴把結果放在這裡...
+測試 8/8、eval 10/10 都通過了，請你看一下...
 ```
+
+想要中性語氣，把米浴綴詞拿掉即可，`摘要：` 標記與擷取格式不變。
 
 實際卡片採工業識別牌（industrial plate）方向：上方是米浴、狀態、代理與專案資訊，下方依 4:6 比例排列 `USER REQUEST` 與 `COMPLETION REPORT`。滿版背景使用實心警戒紅六角、粗黑分隔、`EMERGENCY` 與交錯三角符號，並固定隨機挑選約 15% 六角顯示為暗紅未點亮狀態；主要內容覆蓋高不透明度黑玻璃漸層，維持手機閱讀對比。
 
@@ -71,7 +75,15 @@ Copy-Item config\discord.example.json config\discord.local.json
 }
 ```
 
-`notificationTheme` 預設為 `eva`，舊設定不需修改。新增主題時，在 `scripts/notification-themes/` 放入接受 `-InputPath`、`-OutputPath` 的 PowerShell renderer，再於 `notificationThemeRenderers` 白名單登記名稱。Renderer 讀取相同卡片資料契約：狀態、專案、代理、完成時間、使用者要求、結果與角色圖片路徑。
+`notificationTheme` 可用值為 `eva` 與 `galgame`，預設仍為 `eva`，舊設定不需修改。`galgame` 使用原始米浴狀態圖片、等寬手機聊天區、紫色角色標籤與單列視覺小說操作列；回覆文字以白字黑框直接融入紫色漸層，不顯示獨立回覆框。左上角顯示專案名稱，狀態框可完整容納 `用量不足`，代理標籤可完整容納 `Antigravity 小米浴`。兩個 renderer 讀取相同卡片資料契約：狀態、專案、代理、完成時間、使用者要求、結果與角色圖片路徑。
+
+啟用 Galgame 主題：
+
+```json
+{
+  "notificationTheme": "galgame"
+}
+```
 
 ### 新增通知主題
 
@@ -145,6 +157,12 @@ node scripts/discord-notify.mjs --claude-notify '{"hook_event_name":"Stop","cwd"
 
 ```powershell
 node scripts/discord-notify.mjs --test --dry-run --preview data\notification-preview.png
+```
+
+Galgame 主題預覽：先將本機 `config/discord.local.json` 的 `notificationTheme` 設為 `galgame`，再執行：
+
+```powershell
+node scripts/discord-notify.mjs --test --dry-run --preview .state\galgame-notification-preview.png
 ```
 
 執行 gate tests 與通知格式 eval：

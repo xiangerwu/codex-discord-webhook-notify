@@ -8,6 +8,8 @@ import {
   buildNotificationCardData,
   extractNotificationResult,
   formatCardTime,
+  normalizeEvent,
+  renderNotificationCard,
   resolveNotificationTheme,
 } from "./discord-notify.mjs";
 
@@ -46,7 +48,94 @@ test("hexagon background uses solid warning-red cells with thick black separator
 test("notification themes default to EVA and reject unknown renderers", () => {
   assert.equal(resolveNotificationTheme(), "eva");
   assert.equal(resolveNotificationTheme("EVA"), "eva");
-  assert.throws(() => resolveNotificationTheme("unknown"), /Available themes: eva/u);
+  assert.equal(resolveNotificationTheme("galgame"), "galgame");
+  assert.throws(() => resolveNotificationTheme("unknown"), /Available themes: eva, galgame/u);
+});
+
+test("Galgame renderer uses the approved conversation layout and dynamic labels", async () => {
+  const renderer = await readFile(
+    new URL("./notification-themes/galgame.ps1", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(renderer, /\$width = 1000/u);
+  assert.match(renderer, /\$height = 1400/u);
+  assert.match(renderer, /Draw-ChatBubble/u);
+  assert.match(renderer, /Draw-DialogueGradient/u);
+  assert.match(renderer, /Draw-ReplyFrame/u);
+  assert.match(renderer, /\$data\.agent.*\$riceName/u);
+  assert.match(renderer, /0x5C0F.*0x7C73.*0x6D74/us);
+  assert.match(renderer, /0x54E5.*0x54E5.*0x5927.*0x4EBA/us);
+  assert.match(renderer, /Draw-FitText \$graphics \(\[string\]\$data\.project\) 22 16 62 42 260 52.*Center/u);
+  assert.match(renderer, /PAUSE.*SKIP.*AUTO.*LOG.*SAVE.*LOAD.*SYSTEM/us);
+  assert.doesNotMatch(renderer, /Q\.SAVE|Q\.LOAD/u);
+  assert.match(renderer, /Draw-ChatBubble \$graphics 50 500 900 220/u);
+  assert.match(renderer, /New-RoundedRectangle 50 790 900 430 28/u);
+  assert.match(renderer, /Draw-RoundedPanel \$graphics 72 468 290 68/u);
+  assert.match(renderer, /\$heart \+ "  " \+ \$userLabel/u);
+  assert.match(renderer, /\$heart \+ "  " \+ \$userLabel\) 27 20 .*Center/u);
+  assert.match(renderer, /Draw-RoundedPanel \$graphics 72 758 560 72/u);
+  assert.match(renderer, /\$heart \+ "  " \+ \$speaker/u);
+  assert.match(renderer, /\$heart \+ "  " \+ \$speaker\) 30 20 .*Center/u);
+  assert.match(renderer, /New-Color "332252" 0/u);
+  assert.match(renderer, /New-Color "EEE8FF" 0/u);
+  assert.match(renderer, /\$data\.result\).*New-Color "211B2A" 230\) 2/us);
+  assert.match(renderer, /Draw-RoundedPanel \$graphics 500 128 300 76/u);
+  assert.match(renderer, /\$data\.request\) 25 16 85 553 800 145/u);
+  assert.match(renderer, /\$next\) 18 880 1140 40 36/u);
+});
+
+test("Galgame theme renders a mobile PNG", async () => {
+  const png = await renderNotificationCard(
+    {
+      agent: "antigravity",
+      statusKey: "completed",
+      projectName: "Auto Notify",
+      request: "把通知改成手機聊天樣式",
+      completedAt: "2026-08-01T11:59:00Z",
+      summary: "通知已經送達。",
+    },
+    "galgame"
+  );
+
+  assert.deepEqual([...png.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.equal(png.readUInt32BE(16), 1000);
+  assert.equal(png.readUInt32BE(20), 1400);
+});
+
+test("Galgame status frame fits the longest localized label", async () => {
+  const renderer = await readFile(
+    new URL("./notification-themes/galgame.ps1", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(renderer, /Draw-RoundedPanel \$graphics 500 128 300 76/u);
+  assert.match(renderer, /\$data\.status.*30 22 514 139 272 52/us);
+});
+
+test("Galgame agent role tab fits Antigravity without ellipsis", async () => {
+  const renderer = await readFile(
+    new URL("./notification-themes/galgame.ps1", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(renderer, /Draw-RoundedPanel \$graphics 72 758 560 72/u);
+  assert.match(renderer, /\$speaker\) 30 20 86 768 532 52/u);
+});
+
+test("Codex notifications show the latest user request", () => {
+  const record = normalizeEvent(
+    {
+      type: "agent-turn-complete",
+      cwd: "C:\\project",
+      "input-messages": ["最初的需求", "更新文件 commit & PUSH，我將開啟新對話製作新的卡面"],
+      "last-assistant-message": "完成",
+    },
+    { projectAliases: {} },
+    {}
+  );
+
+  assert.equal(record.request, "更新文件 commit & PUSH，我將開啟新對話製作新的卡面");
 });
 
 test("Discord payload contains only a notification and result", () => {

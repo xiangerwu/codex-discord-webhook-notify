@@ -14,6 +14,7 @@ const defaultEventLogDir = path.join(rootDir, ".state", "events");
 const defaultTitleCachePath = path.join(rootDir, ".state", "thread-titles.json");
 const notificationThemeRenderers = Object.freeze({
   eva: path.join(__dirname, "notification-themes", "eva.ps1"),
+  galgame: path.join(__dirname, "notification-themes", "galgame.ps1"),
 });
 const taipeiFormatter = new Intl.DateTimeFormat("zh-TW", {
   timeZone: "Asia/Taipei",
@@ -412,7 +413,7 @@ function normalizeEvent(event, config, titleCache) {
     new Date().toISOString();
   const url = String(readFirst(event, ["url", "threadUrl", "thread_url"]) || "").trim();
   const projectPath = cwd || "Unknown project";
-  const request = extractUserPrompts(event)[0] || title;
+  const request = extractUserPrompts(event).at(-1) || title;
 
   return {
     id: threadId || turnId || `${eventType || "codex-event"}-${Date.now()}`,
@@ -1162,6 +1163,7 @@ export {
   buildNotificationCardData,
   extractNotificationResult,
   formatCardTime,
+  normalizeEvent,
   renderNotificationCard,
   resolveNotificationTheme,
 };
