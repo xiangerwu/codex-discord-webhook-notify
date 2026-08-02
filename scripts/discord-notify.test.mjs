@@ -8,10 +8,11 @@ import {
   buildNotificationCardData,
   extractNotificationResult,
   formatCardTime,
+  resolveNotificationTheme,
 } from "./discord-notify.mjs";
 
 test("notification background uses flat-top hexagon geometry", async () => {
-  const renderer = await readFile(new URL("./render-notification-card.ps1", import.meta.url), "utf8");
+  const renderer = await readFile(new URL("./notification-themes/eva.ps1", import.meta.url), "utf8");
 
   assert.match(renderer, /\$centerX = \$StartX \+ \(\$column \* \$Radius \* 1\.5\)/u);
   assert.match(renderer, /\$centerY = \$StartY \+ \(\$row \* \$hexHeight\).*\$column % 2/us);
@@ -19,27 +20,33 @@ test("notification background uses flat-top hexagon geometry", async () => {
 });
 
 test("hexagon background covers the full canvas", async () => {
-  const renderer = await readFile(new URL("./render-notification-card.ps1", import.meta.url), "utf8");
+  const renderer = await readFile(new URL("./notification-themes/eva.ps1", import.meta.url), "utf8");
 
   assert.match(renderer, /\$graphics\.FillRectangle\(\$backgroundBrush, 0, 0, \$width, \$height\)/u);
   assert.doesNotMatch(renderer, /\$graphics\.SetClip\(\$backgroundPath\)/u);
 });
 
 test("hexagon background extends beyond every canvas edge", async () => {
-  const renderer = await readFile(new URL("./render-notification-card.ps1", import.meta.url), "utf8");
+  const renderer = await readFile(new URL("./notification-themes/eva.ps1", import.meta.url), "utf8");
 
   assert.match(renderer, /Draw-HexGrid \$graphics \$hexBackground -52 -45 15 17 52/u);
   assert.doesNotMatch(renderer, /\$Bounds/u);
 });
 
 test("hexagon background uses solid warning-red cells with thick black separators", async () => {
-  const renderer = await readFile(new URL("./render-notification-card.ps1", import.meta.url), "utf8");
+  const renderer = await readFile(new URL("./notification-themes/eva.ps1", import.meta.url), "utf8");
 
   assert.match(renderer, /\$hexBackground = .*New-Color "050000".*, 10\)/u);
   assert.match(renderer, /Draw-HexGrid .* \$hexFill 1 \$true \$hexDimFill 0\.15/u);
   assert.match(renderer, /\[System\.Random\]::new\(2408\)/u);
   assert.match(renderer, /DrawString\("EMERGENCY"/u);
   assert.match(renderer, /FillPolygon\(\$Pen\.Brush, \$topTriangle\)/u);
+});
+
+test("notification themes default to EVA and reject unknown renderers", () => {
+  assert.equal(resolveNotificationTheme(), "eva");
+  assert.equal(resolveNotificationTheme("EVA"), "eva");
+  assert.throws(() => resolveNotificationTheme("unknown"), /Available themes: eva/u);
 });
 
 test("Discord payload contains only a notification and result", () => {

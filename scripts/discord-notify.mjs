@@ -12,7 +12,9 @@ const rootDir = path.resolve(__dirname, "..");
 const defaultConfigPath = path.join(rootDir, "config", "discord.local.json");
 const defaultEventLogDir = path.join(rootDir, ".state", "events");
 const defaultTitleCachePath = path.join(rootDir, ".state", "thread-titles.json");
-const cardRendererPath = path.join(__dirname, "render-notification-card.ps1");
+const notificationThemeRenderers = Object.freeze({
+  eva: path.join(__dirname, "notification-themes", "eva.ps1"),
+});
 const taipeiFormatter = new Intl.DateTimeFormat("zh-TW", {
   timeZone: "Asia/Taipei",
   year: "numeric",
@@ -192,6 +194,7 @@ function validateConfig(config, configPath, options = {}) {
   const styleTemplates = normalizeStyleTemplates(config.styleTemplates);
   const statusImageUrls = normalizeStatusImageUrls(config.statusImageUrls);
   const forwardNotifyCommand = normalizeForwardNotifyCommand(config.forwardNotifyCommand);
+  const notificationTheme = resolveNotificationTheme(config.notificationTheme);
 
   if (!webhookUrl && !options.allowEmptyWebhook) {
     throw new Error(
@@ -233,8 +236,19 @@ function validateConfig(config, configPath, options = {}) {
     styleTemplates,
     statusImageUrls,
     forwardNotifyCommand,
+    notificationTheme,
     agents,
   };
+}
+
+function resolveNotificationTheme(value = "eva") {
+  const theme = String(value || "eva").trim().toLowerCase();
+  if (!Object.hasOwn(notificationThemeRenderers, theme)) {
+    throw new Error(
+      `Unknown notificationTheme "${theme}". Available themes: ${Object.keys(notificationThemeRenderers).join(", ")}`
+    );
+  }
+  return theme;
 }
 
 function normalizeProjectAliases(value) {
@@ -857,7 +871,7 @@ function buildNotificationCardData(record) {
   };
 }
 
-async function renderNotificationCard(record) {
+async function renderNotificationCard(record, notificationTheme = "eva") {
   const stateDir = path.join(rootDir, ".state");
   const id = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const inputPath = path.join(stateDir, `notification-card-${id}.json`);
@@ -869,6 +883,7 @@ async function renderNotificationCard(record) {
     "v1.0",
     "powershell.exe"
   );
+  const rendererPath = notificationThemeRenderers[resolveNotificationTheme(notificationTheme)];
 
   await mkdir(stateDir, { recursive: true });
   await writeFile(
@@ -884,7 +899,7 @@ async function renderNotificationCard(record) {
       "-ExecutionPolicy",
       "Bypass",
       "-File",
-      cardRendererPath,
+      rendererPath,
       "-InputPath",
       inputPath,
       "-OutputPath",
@@ -1026,7 +1041,7 @@ async function main() {
 
   for (const record of records) {
     const payload = buildDiscordPayload(record, config);
-    const cardPng = await renderNotificationCard(record);
+    const cardPng = await renderNotificationCard(record, config.notificationTheme);
     if (args.previewPath) {
       await mkdir(path.dirname(args.previewPath), { recursive: true });
       await writeFile(args.previewPath, cardPng);
@@ -1148,4 +1163,5 @@ export {
   extractNotificationResult,
   formatCardTime,
   renderNotificationCard,
+  resolveNotificationTheme,
 };

@@ -1,6 +1,7 @@
 {
   "webhookUrl": "",
   "mentionUserId": "123456789012345678",
+  "notificationTheme": "eva",
   "forwardNotifyCommand": [],
   "projectAliases": {
     "C:\\Users\\your-name\\Documents\\your-project": "我的專案"

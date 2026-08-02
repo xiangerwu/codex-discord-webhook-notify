@@ -4,6 +4,7 @@ import {
   buildDiscordPayload,
   buildNotificationCardData,
   renderNotificationCard,
+  resolveNotificationTheme,
 } from "../scripts/discord-notify.mjs";
 
 for (const statusKey of ["completed", "needs_approval", "failed", "usage_limited", "completed_check"]) {
@@ -39,5 +40,7 @@ assert.equal(
 const completedCheck = buildNotificationCardData({ statusKey: "completed_check", summary: "" });
 assert.equal(completedCheck.status, "待確認");
 assert.match(completedCheck.result, /未提供結果摘要/u);
+assert.equal(resolveNotificationTheme("EVA"), "eva");
+assert.throws(() => resolveNotificationTheme("missing"), /Available themes: eva/u);
 
-console.log("notification contract eval: 10/10 passed");
+console.log("notification contract eval: 11/11 passed");

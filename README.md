@@ -12,6 +12,7 @@
 - 保留原始 Codex event log 到 `.state/events/*.jsonl` 方便校準
 - 使用現有米浴角色圖片，依狀態在本機產生紅黑警戒風格通知卡
 - 優先擷取代理自己標記的摘要段（`摘要：` / `SUMMARY:` / `結論：`），沒有標記才退回最終回覆前兩行
+- 可由設定切換通知主題，目前提供 `eva`
 - 支援固定格式與轉發 notify command
 
 ## 通知格式
@@ -41,7 +42,7 @@
 
 ```text
 scripts/discord-notify.mjs     Codex notify handler
-scripts/render-notification-card.ps1  本機 PNG 卡片渲染器
+scripts/notification-themes/eva.ps1  EVA 主題 PNG 渲染器
 config/discord.example.json    設定範例，可複製成本機設定
 data/riceshower_stamp/*.png    米浴表情包素材
 ```
@@ -62,12 +63,25 @@ Copy-Item config\discord.example.json config\discord.local.json
 {
   "webhookUrl": "https://discord.com/api/webhooks/...",
   "mentionUserId": "123456789012345678",
+  "notificationTheme": "eva",
   "projectAliases": {
     "C:\\Users\\your-name\\Documents\\your-project": "我的專案"
   },
   "forwardNotifyCommand": []
 }
 ```
+
+`notificationTheme` 預設為 `eva`，舊設定不需修改。新增主題時，在 `scripts/notification-themes/` 放入接受 `-InputPath`、`-OutputPath` 的 PowerShell renderer，再於 `notificationThemeRenderers` 白名單登記名稱。Renderer 讀取相同卡片資料契約：狀態、專案、代理、完成時間、使用者要求、結果與角色圖片路徑。
+
+### 新增通知主題
+
+1. 複製 `scripts/notification-themes/eva.ps1` 作為新 renderer，或自行建立接受 `-InputPath`、`-OutputPath` 的 PowerShell 腳本。
+2. 從輸入 JSON 使用 `status`、`statusKey`、`project`、`agent`、`completedAt`、`request`、`result`、`avatarPath`，並將 PNG 寫至 `OutputPath`。
+3. 在 `scripts/discord-notify.mjs` 的 `notificationThemeRenderers` 登記主題名稱與腳本路徑。
+4. 將 `config/discord.local.json` 的 `notificationTheme` 改成新名稱。
+5. 執行下方 gate tests、eval 與 `--preview` 命令確認輸出。
+
+通知資料擷取、Discord payload 與發送流程由共用 handler 負責；新主題只處理 PNG 視覺，不應重做事件解析或 webhook 邏輯。
 
 ## Codex Notify
 

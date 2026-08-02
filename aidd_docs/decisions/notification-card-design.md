@@ -4,9 +4,13 @@ Date: 2026-08-01
 
 ## Decision
 
-Use the validated **Industrial Plate (A v3)** layout for generated Discord notification cards.
+Use replaceable notification themes. The first theme is the validated **EVA Industrial Plate (A v3)** layout.
 
 The card is rendered locally as a 1000×1400 PNG using Windows System.Drawing. Its height is twice the previous card, and the portrait layout prioritizes phone readability. Runtime image generation does not call an AI model and adds no npm dependency.
+
+`notificationTheme` selects a renderer from the explicit `notificationThemeRenderers` allowlist. It defaults to `eva`, so existing local configuration remains compatible. Each renderer accepts the same input JSON and output PNG paths; adding a theme requires one renderer file and one allowlist entry.
+
+Theme renderers own only PNG presentation. Event normalization, status detection, text truncation, avatar selection, Discord payload construction, and webhook delivery remain in the shared JavaScript handler. The renderer input contract is `status`, `statusKey`, `project`, `agent`, `completedAt`, `request`, `result`, and `avatarPath`.
 
 ## Information contract
 
